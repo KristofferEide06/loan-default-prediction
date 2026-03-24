@@ -1,11 +1,13 @@
 df <- read.csv("loan_data.csv")
 
 #Data analysis
+head(df)
+summary(df)
 names(df)
+
 nrow(df)
 ncol(df)
 
-summary(df)
 colSums(is.na(df))
 sum(duplicated(df))
 
@@ -25,4 +27,4 @@ train_1 <- sample(idx_1, size = 0.8*length(idx_1))
 train_idx <- c(train_0, train_1)
 
 train <- df[train_idx, ]
-test <- df[-train_idx]
+test <- df[-train_idx, ]
