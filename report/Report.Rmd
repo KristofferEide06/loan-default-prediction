@@ -3,3 +3,69 @@ title: "Report"
 output: html_document
 ---
 
+```{r setup, include = FALSE}
+library(here)
+source(here::here("data", "data.R"))
+source(here::here("src", "trees", "Tree_analysis.R"))
+```
+
+## Models
+
+### Decision trees
+```{r}
+aggregation_models <- readRDS(here::here("models", "aggregation_models.rds"))
+```
+#### Single tree
+```{r single_tree}
+tree.loan <- aggregation_models$tree.loan
+
+visualize_tree(model = tree.loan, aggregation = FALSE)
+performance_tree(model = tree.loan, test = test)
+```
+
+```{r prune}
+prune.loan <- aggregation_models$prune.loan
+
+visualize_tree(model = prune.loan, aggregation = FALSE)
+performance_tree(model = prune.loan, test = test)
+```
+
+#### Bagging
+
+```{r bag}
+bag.loan <- aggregation_models$bag.loan
+
+visualize_tree(model = bag.loan, aggregation = TRUE)
+performance_tree(model = bag.loan, test = test)
+```
+
+#### Random forest
+
+```{r rf_class}
+rf.loan <- aggregation_models$rf.loan
+
+visualize_tree(model = rf.loan, aggregation = TRUE)
+performance_tree(model = rf.loan, test = test)
+```
+
+```{r rf_best}
+rf_tuning <- readRDS(here::here("models", "rf_tuning.rds"))
+
+plot(rf_tuning$mtry.oob$mtry, rf_tuning$mtry.oob$oob.error, type = "b", xlab = "mtry", ylab = "oob error")
+points(rf_tuning$mtry.oob$mtry[rf_tuning$best.mtry.idx], rf_tuning$mtry.oob$oob.error[rf_tuning$best.mtry.idx], col = "red", pch = 20)
+legend("topright",
+       legend = "Minimum oob error",
+       col = "red",
+       pch = 20,
+       bty = "n")
+
+rf.best.loan <- aggregation_models$rf.best.loan
+
+visualize_tree(model = rf.best.loan, aggregation = TRUE)
+performance_tree(model = rf.best.loan, test = test)
+```
+We check positives ratio since this is baseline AUC for PR. The baseline ratio is 
+```{r baseline_pr}
+cat("Prevelance: ", mean(test$loan_status == 1))
+```
+
