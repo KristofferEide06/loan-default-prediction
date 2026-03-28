@@ -2,7 +2,7 @@
 title: "Report"
 output: html_document
 ---
-<<<<<<< HEAD
+
 ```{r setup, include = FALSE}
 library(here)
 source(here::here("data", "data.R"))
@@ -68,6 +68,4 @@ We check positives ratio since this is baseline AUC for PR. The baseline ratio i
 ```{r baseline_pr}
 cat("Prevelance: ", mean(test$loan_status == 1))
 ```
-=======
 
->>>>>>> origin/main
