@@ -5,6 +5,7 @@ output: html_document
 
 ```{r setup, include = FALSE}
 library(here)
+library(lightgbm)
 source(here::here("data", "data.R"))
 source(here::here("src", "trees", "Tree_analysis.R"))
 ```
@@ -20,14 +21,14 @@ aggregation_models <- readRDS(here::here("models", "aggregation_models.rds"))
 tree.loan <- aggregation_models$tree.loan
 
 visualize_tree(model = tree.loan, aggregation = FALSE)
-performance_tree(model = tree.loan, test = test)
+performance.tree.loan <- performance_tree(model = tree.loan, test = test)
 ```
 
 ```{r prune}
 prune.loan <- aggregation_models$prune.loan
 
 visualize_tree(model = prune.loan, aggregation = FALSE)
-performance_tree(model = prune.loan, test = test)
+performance.prune.loan <- performance_tree(model = prune.loan, test = test)
 ```
 
 #### Bagging
@@ -36,7 +37,7 @@ performance_tree(model = prune.loan, test = test)
 bag.loan <- aggregation_models$bag.loan
 
 visualize_tree(model = bag.loan, aggregation = TRUE)
-performance_tree(model = bag.loan, test = test)
+performance.bag.loan <- performance_tree(model = bag.loan, test = test)
 ```
 
 #### Random forest
@@ -45,7 +46,7 @@ performance_tree(model = bag.loan, test = test)
 rf.loan <- aggregation_models$rf.loan
 
 visualize_tree(model = rf.loan, aggregation = TRUE)
-performance_tree(model = rf.loan, test = test)
+performance.rf.loan <- performance_tree(model = rf.loan, test = test)
 ```
 
 ```{r rf_best}
@@ -62,10 +63,74 @@ legend("topright",
 rf.best.loan <- aggregation_models$rf.best.loan
 
 visualize_tree(model = rf.best.loan, aggregation = TRUE)
-performance_tree(model = rf.best.loan, test = test)
+performance.rf.best.loan <- performance_tree(model = rf.best.loan, test = test)
 ```
 We check positives ratio since this is baseline AUC for PR. The baseline ratio is 
 ```{r baseline_pr}
 cat("Prevelance: ", mean(test$loan_status == 1))
 ```
 
+#### Boosting
+##### Ada Boost
+```{r, adaboost}
+adaboost <- readRDS(here::here("models", "adaboost.rds"))
+
+ada.loan <- adaboost$ada.model
+ada.params <- adaboost$ada.params
+
+print(ada.params)
+print(summary(ada.loan))
+performance.adaboost.loan <- performance_boost_tree(model = ada.loan, test = test)
+```
+##### lgbm
+```{r, lgbm}
+lgbm.data <- readRDS(here::here("models", "lgbm.rds"))
+lgbm.model <- lgb.load(here::here("models", "lgbm_model.txt"))
+
+lgbm.params <- lgbm.data$lgbm.params
+lgbm.loan <- lgbm.model
+
+print(lgbm.params)
+print(summary(lgbm.loan))
+performance.lgbm.loan <- performance_boost_tree(model = lgbm.loan, test = test)
+```
+
+```{r, bag_lgbm}
+bag_lgbm.loan <- readRDS(here::here("models", "bag_lgbm.rds"))
+
+dev.bag_lgbm.loan <- bag_lgbm.loan$prob_dev
+cat("Deviation in bootstrap: \n ")
+print(summary(dev.bag_lgbm.loan))
+
+performance.bag_lgbm.loan <- performance_boost_tree(bag_lgbm.loan, test)
+```
+
+#### Tree summary
+```{r}
+performance.df <- rbind(
+  data.frame(model = "tree", as.data.frame(performance.tree.loan)),
+  data.frame(model = "prune", as.data.frame(performance.prune.loan)),
+  data.frame(model = "bag", as.data.frame(performance.bag.loan)),
+  data.frame(model = "random forest", as.data.frame(performance.rf.loan)),
+  data.frame(model= "cv random forest", as.data.frame(performance.rf.best.loan)),
+  data.frame(model = "ada boost", as.data.frame(performance.adaboost.loan)),
+  data.frame(model = "lgbm", as.data.frame(performance.lgbm.loan)),
+  data.frame(model = "bag lgbm", as.data.frame(performance.bag_lgbm.loan))
+)
+
+performance.df.auc_sort <- performance.df[order(-performance.df$auc), ]
+cat("AUC: \n")
+print(performance.df.auc_sort[, c("model", "auc")], row_names = FALSE)
+
+performance.df.misclass_sort <- performance.df[order(-performance.df$misclass_rate), ]
+cat("Misclassification rate: \n")
+print(performance.df.misclass_sort[, c("model", "misclass_rate")], row_names = FALSE)
+
+performance.df.sens_sort <- performance.df[order(-performance.df$sensitivity), ]
+cat("Sensitivity: \n")
+print(performance.df.sens_sort[, c("model", "sensitivity")], row_names = FALSE)
+
+performance.df.spec_sort <- performance.df[order(-performance.df$specificity), ]
+cat("Specificity: \n")
+print(performance.df.spec_sort[, c("model", "specificity")], row_names = FALSE)
+```
