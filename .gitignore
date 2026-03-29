@@ -13,6 +13,10 @@
 # macOS files
 .DS_Store
 
+# Windows
+Thumbs.db
+Desktop.ini
+
 # RStudio files
 .Rproj.user/
 
