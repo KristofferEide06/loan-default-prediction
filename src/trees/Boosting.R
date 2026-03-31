@@ -117,7 +117,7 @@ lgbm.loan.results <- cv.lgbm.loan$results
 saveRDS(
   list(
     lgbm.params = lgbm.loan.params,
-    ada_.esults = lgbm.loan.results
+    lgbm.results = lgbm.loan.results
   ),
   here::here("models", "lgbm.rds")
 )
