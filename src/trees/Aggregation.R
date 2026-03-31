@@ -12,6 +12,7 @@ cv.min.idx <- which.min(cv.loan$dev)
 best.tree <- cv.loan$size[cv.min.idx]
 
 prune.loan <- prune.misclass(tree.loan, best = best.tree)
+
 #Bagging
 set.seed(123)
 
@@ -31,7 +32,7 @@ rf.loan <- randomForest(loan_status ~ .,
                         ntree = 500,
                         importance = TRUE)
 
-#Find ideal mtry
+#Random forest with cv for mtry
 set.seed(123)
 
 mtry.grid <- seq(ncol(train) - 1)
@@ -63,7 +64,7 @@ set.seed(123)
 
 rf.best.loan <- randomForest(loan_status ~ ., data = train, mtry = best.mtry, ntree = 500, importance = TRUE)
 
-#Save
+#Save models
 tree_models <- list(
   tree.loan = tree.loan,
   cv.loan = cv.loan,
