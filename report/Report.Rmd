@@ -1,14 +1,89 @@
 ---
 title: "Report"
-output: html_document
+output: pdf_document
 ---
 
 ```{r setup, include = FALSE}
 library(here)
 library(lightgbm)
+library(ggplot2)
+library(GGally)
 source(here::here("data", "data.R"))
 source(here::here("src", "trees", "Tree_analysis.R"))
+
+knitr::opts_chunk$set(
+  fig.width = 7, fig.height = 4.5, out.width = "92%",
+  dpi = 140, message = FALSE, warning = FALSE, echo = FALSE,
+  fig.align = "center"
+)
 ```
+
+## Introduction
+This project uses the following dataset: https://www.kaggle.com/datasets/udaymalviya/bank-loan-data/data. Each model developed will attempt to predict a borrower's loan status (i.e., wether a loan is fully paid or default) based on financial and demographic predictors, and this is thus a binary classification problem. The goal of the project is to:
+
+- Compare the performance of multiple classification models in terms of predictive accuracy, interpretability and computational cost.
+- Find the most important variables for loan_status and compare the demographic and financial predictors.
+
+## Data
+
+### Data wrangling
+The dataset was without any NA-s, most importantly there were no NA-s for the loan_status. It did however have some potential logical outliers. We identified and removed observations that satisfied at least one of these conditions:
+
+$
+\[
+\begin{aligned}
+\text{person\_age} &< 18 \\
+\text{person\_age} &> 100 \\
+\text{person\_income} &< 0 \\
+\text{loan\_amnt} &\leq 0 \\
+\text{loan\_int\_rate} &\leq 0 \\
+\text{loan\_percent\_income} &< 0 \\
+\text{person\_emp\_exp} &< 0 \\
+\text{person\_emp\_exp} &> \text{person\_age} \\
+\text{cb\_person\_cred\_hist\_length} &< 0 \\
+\text{cb\_person\_cred\_hist\_length} &> \text{person\_age}
+\end{aligned}
+\]
+$
+
+We transformed the datatype of each column that was supposed to be a factorial to the factorial datatype, as this was processed as a character and integer in R. In addition we added the predictors emp_exp_to_age and cred_hist_to_age, which is employee experience to age ratio and credit history to age ratio respectively. These predictors might also be relevant for the models. 
+
+Lastly we created the train and test split. Since the default to non-default ratio is skewed (prevelance is low as seen in data analysis), we chose to stratify the splits.
+
+### Data analysis
+```{r prevelance, fig.width=5, fig.height=3.2, out.width='65%', fig.align='center'}
+ggplot(Loan, aes(x = loan_status)) + geom_bar()
+
+prevelance <- mean(Loan$loan_status == 1)
+
+cat("Prevelance: ", prevelance)
+```
+
+```{r, numeric_plot, fig.width=7, fig.height=5}
+num.cols.num <- names(Loan)[sapply(Loan, is.numeric)]
+par(mfrow = c(2, 2))
+
+for (column in num.cols.num) {
+  hist(Loan[[column]],
+        main = paste("Hist, ", column),
+        xlab = column)
+  boxplot(Loan[[column]],
+       main = paste("Box, ", column),
+       xlab = column)
+}
+``` 
+
+```{r, categorical_plot, fig.width=7, fig.height=5}
+num.cols.fac <- names(Loan)[sapply(Loan, is.factor)]
+par(mfrow = c(2, 2))
+
+for (column in num.cols.fac) {
+  plot(Loan[[column]],
+      main = column,
+      xlab = column)
+}
+```
+
 
 ## Models
 
@@ -16,40 +91,18 @@ source(here::here("src", "trees", "Tree_analysis.R"))
 ```{r}
 aggregation_models <- readRDS(here::here("models", "aggregation_models.rds"))
 ```
+
 #### Single tree
-```{r single_tree}
-tree.loan <- aggregation_models$tree.loan
-
-visualize_tree(model = tree.loan, aggregation = FALSE)
-performance.tree.loan <- performance_tree(model = tree.loan, test = test)
-```
-
-```{r prune}
+```{r prune, fig.width=11, fig.height=6, out.width='100%'}
 prune.loan <- aggregation_models$prune.loan
 
 visualize_tree(model = prune.loan, aggregation = FALSE)
 performance.prune.loan <- performance_tree(model = prune.loan, test = test)
 ```
 
-#### Bagging
-
-```{r bag}
-bag.loan <- aggregation_models$bag.loan
-
-visualize_tree(model = bag.loan, aggregation = TRUE)
-performance.bag.loan <- performance_tree(model = bag.loan, test = test)
-```
-
 #### Random forest
 
-```{r rf_class}
-rf.loan <- aggregation_models$rf.loan
-
-visualize_tree(model = rf.loan, aggregation = TRUE)
-performance.rf.loan <- performance_tree(model = rf.loan, test = test)
-```
-
-```{r rf_best}
+```{r rf}
 rf_tuning <- readRDS(here::here("models", "rf_tuning.rds"))
 
 plot(rf_tuning$mtry.oob$mtry, rf_tuning$mtry.oob$oob.error, type = "b", xlab = "mtry", ylab = "oob error")
@@ -60,10 +113,10 @@ legend("topright",
        pch = 20,
        bty = "n")
 
-rf.best.loan <- aggregation_models$rf.best.loan
+rf.loan <- aggregation_models$rf.loan
 
-visualize_tree(model = rf.best.loan, aggregation = TRUE)
-performance.rf.best.loan <- performance_tree(model = rf.best.loan, test = test)
+visualize_tree(model = rf.loan, aggregation = TRUE)
+performance.rf.loan <- performance_tree(model = rf.loan, test = test)
 ```
 We check positives ratio since this is baseline AUC for PR. The baseline ratio is 
 ```{r baseline_pr}
@@ -71,6 +124,7 @@ cat("Prevelance: ", mean(test$loan_status == 1))
 ```
 
 #### Boosting
+
 ##### Ada Boost
 ```{r, adaboost}
 adaboost <- readRDS(here::here("models", "adaboost.rds"))
@@ -82,6 +136,7 @@ print(ada.params)
 print(summary(ada.loan))
 performance.adaboost.loan <- performance_boost_tree(model = ada.loan, test = test)
 ```
+
 ##### lgbm
 ```{r, lgbm}
 lgbm.data <- readRDS(here::here("models", "lgbm.rds"))
@@ -108,11 +163,8 @@ performance.bag_lgbm.loan <- performance_boost_tree(bag_lgbm.loan, test)
 #### Tree summary
 ```{r}
 performance.df <- rbind(
-  data.frame(model = "tree", as.data.frame(performance.tree.loan)),
   data.frame(model = "prune", as.data.frame(performance.prune.loan)),
-  data.frame(model = "bag", as.data.frame(performance.bag.loan)),
-  data.frame(model = "random forest", as.data.frame(performance.rf.loan)),
-  data.frame(model= "cv random forest", as.data.frame(performance.rf.best.loan)),
+  data.frame(model= "random forest", as.data.frame(performance.rf.loan)),
   data.frame(model = "ada boost", as.data.frame(performance.adaboost.loan)),
   data.frame(model = "lgbm", as.data.frame(performance.lgbm.loan)),
   data.frame(model = "bag lgbm", as.data.frame(performance.bag_lgbm.loan))

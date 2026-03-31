@@ -2,24 +2,31 @@ library(ROCR)
 library(tree)
 library(randomForest)
 
-visualize_tree <- function(model, aggregation) {
+visualize_tree <- function(model, aggregation, show_summary = FALSE,
+                           top_n = 10, tree_cex = 0.7, imp_cex = 0.8) {
   if (!aggregation) {
-    print(summary(model))
+    if (show_summary) print(summary(model))
+    op <- par(mar = c(1, 1, 2, 1))
+    on.exit(par(op), add = TRUE)
     plot(model)
-    text(model, pretty = 0)
+    text(model, pretty = 0, cex = tree_cex)
   } else {
-    print(importance(model))
-    varImpPlot(model)
+    op <- par(mar = c(5, 14, 2, 1) + 0.1)
+    on.exit(par(op), add = TRUE)
+    varImpPlot(model, type = 1, cex = imp_cex)
   }
 }
 
-performance_tree <- function(model, test) {
+performance_tree <- function(model, test, verbose = FALSE) {
   model.pred <- predict(model, newdata = test, type = "class")
   
   #Metrics
   confTab.model <- table(Predicted = model.pred, actual = test$loan_status)
-  cat("Confusion matrix: \n")
-  print(confTab.model)
+  
+  if (verbose) {
+    cat("Confusion matrix: \n")
+    print(confTab.model)
+  }
   
   misclass.model <- 1 - sum(diag(confTab.model))/sum(confTab.model)
   sensitivity.model <- confTab.model["1", "1"]/sum(confTab.model[, "1"])
@@ -39,7 +46,9 @@ performance_tree <- function(model, test) {
   predob <- ROCR::prediction(pred, test$loan_status)
   perf <- ROCR::performance(predob, "prec", "rec") #Change to tpr, fpr for ROC. PR generally better for rare classes
   
+  if (verbose) {
   plot(perf)
+  }
   
   auc.model <- ROCR::performance(predob, "auc")
   cat("AUC: ", auc.model@y.values[[1]], "\n")
@@ -52,7 +61,7 @@ performance_tree <- function(model, test) {
   )
 }
 
-performance_boost_tree <- function(model, test, threshold = 0.5, n.trees = NULL) { #Copilot used to help with this one(prob >= threshold, 1, 0)
+performance_boost_tree <- function(model, test, verbose = FALSE, threshold = 0.5, n.trees = NULL) { #Copilot used to help with this one(prob >= threshold, 1, 0)
   if (inherits(model, "lgb.Booster")) {
     x_test <- data.matrix(test[, setdiff(names(test), "loan_status")])
     prob <- predict(model, x_test)
@@ -72,8 +81,11 @@ performance_boost_tree <- function(model, test, threshold = 0.5, n.trees = NULL)
   actual = as.numeric(as.character(test$loan_status))
   
   confTab.model <- table(Predicted = model.pred, actual = actual)
+  
+  if (verbose) {
   cat("Confusion matrix: \n")
   print(confTab.model)
+  }
   
   misclass.model <- 1 - sum(diag(confTab.model))/sum(confTab.model)
   sensitivity.model <- confTab.model["1", "1"]/sum(confTab.model[, "1"])
@@ -87,7 +99,9 @@ performance_boost_tree <- function(model, test, threshold = 0.5, n.trees = NULL)
   predob <- ROCR::prediction(prob, actual)
   perf <- ROCR::performance(predob, "prec", "rec")
   
+  if (verbose) {
   plot(perf)
+  }
   
   auc.model <- ROCR::performance(predob, "auc")
   cat("AUC: ", auc.model@y.values[[1]], "\n")
