@@ -1,7 +1,6 @@
 ---
 title: "Report"
-output: 
-  html_document: default
+output:
   pdf_document: default
 author: 
   - Kristoffer Eide
@@ -92,7 +91,7 @@ The strength of the ROCR is that it gives an interpretable result of how well th
 
 Next we look at the logically most important numeric and categorical predictors. There might prove to be more important predictors later, but these are the ones we intuitively think should affect the data the most.
 
-```{r, numeric_plot, fig.width=7, fig.height=7}
+```{r numeric_plot, fig.width=7, fig.height=7}
 key_numeric <- c("loan_percent_income", "loan_int_rate", "credit_score")
 num.cols.num <- names(Loan)[sapply(Loan, is.numeric)]
 par(mfrow = c(3, 3), mar = c(3, 3, 2, 1), oma = c(0, 0, 4, 0), cex = 0.6)
@@ -113,7 +112,7 @@ for (column in key_numeric) {
 mtext("Numeric predictors", side = 3, outer = TRUE, line = 1.2, cex = 1.3)
 ``` 
 
-```{r, categorical_plot, fig.width=7, fig.height=5}
+```{r categorical_plot, fig.width=7, fig.height=5}
 key_categorical <- c("previous_loan_defaults_on_file", "loan_intent", "person_home_ownership") 
 par(mfrow = c(3, 2), oma = c(0, 0, 4, 0), cex = 0.5)
 
@@ -167,7 +166,7 @@ ggplot(data = melted_cormat, aes(Var1, Var2, fill = value))+ labs(title =  "Nume
 
 ```
 
-The correlation plot indicates that some of the predictors are highly correlated, which is undesirable for interpretability. The model might give arbitrary weight to either predictor across different fits, resulting in large standord errors and weak interpretability. The predictors can still be very good for prediction however, as they might be engineered predictors (e.g. loan_percent_income) which gives the models clearer patterns to evaluate on. The prediction is often less hurt by correlation, as it does not care about a clean split between the weight of the correlated predictors, only the total contribution to the predicted value. To reduce the amount of correlated predictors we can use subset selection or regularization methods.
+The correlation plot indicates that some of the predictors are highly correlated, which is undesirable for interpretability. The model might give arbitrary weight to either predictor across different fits, resulting in large standard errors and weak interpretability. The predictors can still be very good for prediction however, as they might be engineered predictors (e.g. loan_percent_income) which gives the models clearer patterns to evaluate on. The prediction is often less hurt by correlation, as it does not care about a clean split between the weight of the correlated predictors, only the total contribution to the predicted value. To reduce the amount of correlated predictors we can use subset selection or regularization methods.
 
 ## Models
 
@@ -181,6 +180,7 @@ aggregation_models <- readRDS(here::here("models", "aggregation_models.rds"))
 
 A single decision tree divides the precictor axis into seeral areas, on which we predict by majority vote for each observation in the area we predict on. We use a recursive binary splitting algorithm, which is computationally efficient, and can be formulated as follows
 
+```{=latex}
 \begin{algorithm}[H]
 \DontPrintSemicolon
 \SetAlgoLined
@@ -197,7 +197,16 @@ A single decision tree divides the precictor axis into seeral areas, on which we
 }
 \caption{Recursive binary split}
 \end{algorithm} 
+```
 
+The splitting criterion is RSS for regression, and node impurity for classification, either Gini index $G = \sum_{k = 1}^K p_k(1-p_k)$ or cross-entropy $D = - \sum_{k=1}^K p_k \log p_k$. Node impurity is generally better for classification, than misclassification rate. Consider as an example two classes with 400 nodes each written as (400, 400). If the model were to choose between the splits 
+- (100, 300) and (300, 100) 
+- (200, 400) and (200, 0)
+the misclassification rate would be 25% for both. We would however prefer the latter, as this has a pure class (low node impurity), which is to prefer. To reduce the risk of overfitting we use a splitting criterion, like minimum improvement in splitting criterion, or minimal observations in node after splitting. 
+
+To reduce the risk of overfitting, we prune the trees by minimizing a cost-complexity pruning. K-fold cross validation is used to find to find the optimal $\alpha$, or equivalently the optimal subtree size. The algorithm for cost complexity and K-fold cross validation is as follows: 
+
+```{=latex}
 \begin{algorithm}[H]
 \DontPrintSemicolon
 \SetAlgoLined
@@ -209,6 +218,28 @@ A single decision tree divides the precictor axis into seeral areas, on which we
     choose tree with lowest $C_\alpha$ using cross-validation
 \caption{Pruning}
 \end{algorithm} 
+```
+
+```{=latex}
+\begin{algorithm}[H]
+\DontPrintSemicolon
+\SetAlgoLined
+\SetKwInOut{Input}{Input}\SetKwInOut{Output}{Output}
+\Input{model, train\_data, params, K}
+\Output{optimal param}
+\BlankLine
+    divide train into K folds ;\
+    \For{param\_i in params}{
+      \For{fold\_j in folds}{
+      evaluate model on all folds except fold\_j \;
+      calculate validation error $err_{ij}$ on fold\_j /;
+  }
+  compute mean validation error $\bar{err}_i = \frac{1}{K} \sum_{j=1}^K err_{ij}$ \;
+}
+\Return{Param with lowest $\bar{err}_i$}
+\caption{K-fold cross validation}
+\end{algorithm}
+```
 
 
 ```{r prune, fig.width=8, fig.height=4, out.width='100%'}
@@ -218,8 +249,28 @@ visualize_tree(model = prune.loan, aggregation = FALSE)
 performance.prune.loan <- performance_tree(model = prune.loan, test = test)
 ```
 
+From the decision tree plot we see that the most important predictors for the tree model is 
+
+\begin{enumerate}
+  \item previous\_loan\_defaults\_on\_file
+  \item loan\_percent\_income
+  \item loan\_int\_rate, person\_home\_ownership
+  \item person\_income
+\end{enumerate}
+
+in that order. 
+
 **Random forest**
 
+To reduce the variance of our tree models, we can use bagging. We fit multiple models on bootstrap aggregated data, then average these models. The variance of the new model is
+
+\begin{align*}
+Var[\bar{X}] = Var[\frac 1 n \sum X_i] = \frac{1}{n^2} Var[X_i] + \sum_{i \neq j} Cov(X_i, X_j)
+\end{align*}
+
+Increasing n would reduce the first term, however the tree models would usually choose the same important predictors each time, causing the models to be correlated and thus increasing the second term. To reduce the correlation between each tree, we sample a certain fraction of the predictors during each split in the binary recursive split algorith, only allowing the tree to choose between one of these.For classification we usually choose $m = \sqrt{p}$ and for regression $p/3$ where p is the number of predictors. The algorithm can be formulated as follows:
+ 
+```{=latex}
 \begin{algorithm}[H]
 \DontPrintSemicolon
 \SetAlgoLined
@@ -234,8 +285,33 @@ performance.prune.loan <- performance_tree(model = prune.loan, test = test)
   predict by averaging each tree
 \caption{Random forest}
 \end{algorithm} 
+```
 
-```{r rf}
+When bootstrap aggregating the data one can show that $~ 1/3$ of the train data is left out when training the model. On average then observation\_i would not be used by $~1/3 \cdot \text{num\_trees}$ of the trees. Thus we can use this part to calculate the error, called out of bag error, insetad of using cross validation.
+
+
+```{=latex}
+\begin{algorithm}[H]
+\DontPrintSemicolon
+\SetAlgoLined
+\SetKwInOut{Input}{Input}\SetKwInOut{Output}{Output}
+\Input{training\_data, bagging model}
+\Output{oob error}
+\BlankLine
+  n = nrow(training\_data)
+  \For{i=1 to n}{
+    find each tree that excluded observation i during training \;
+    predict response on observation\_i using these trees \;
+    calculate error err\_i
+  }
+\Return($\frac{1}{n} \sum_{i = 1}^{n} err_i$)
+\caption{OOB}
+\end{algorithm} 
+```
+
+Although we usually would choose $\sqrt p = \sqrt{15} \approx 4$, we find the best parameter selection size mtry using the oob error.  
+
+```{r rf tuning}
 rf_tuning <- readRDS(here::here("models", "rf_tuning.rds"))
 
 plot(rf_tuning$mtry.oob$mtry, rf_tuning$mtry.oob$oob.error, type = "b", xlab = "mtry", ylab = "oob error")
@@ -245,7 +321,11 @@ legend("topright",
        col = "red",
        pch = 20,
        bty = "n")
+```
 
+The optimal size for this dataset turned out to be 6. For the random forest model with mtry = 6, we get the following variable importance and performance:
+
+```{r rf performance}
 rf.loan <- aggregation_models$rf.loan
 
 visualize_tree(model = rf.loan, aggregation = TRUE)
@@ -253,9 +333,11 @@ performance.rf.loan <- performance_tree(model = rf.loan, test = test)
 ```
 
 ### Boosting
+The boosting methods are sequential, unlike bagging and random forest which builds trees independently and aggregate their predictions.In boosting, models are added one at a time, where each model attempts to improve on the previous model's error. 
 
 **Ada Boost**
-
+The Ada boost algorithm can be formulated as follows
+```{=latex}
 \begin{algorithm}[H]
 \DontPrintSemicolon
 \SetAlgoLined
@@ -270,53 +352,67 @@ performance.rf.loan <- performance_tree(model = rf.loan, test = test)
     Compute $\alpha_\text{m} = \log{(1-\text{err}_\text{m})/\text{err}_\text{m}}$ \;
     Set $w_i <- w_i*\exp{\alpha_\text{m} \cdot I(y_i \neq G_m(x_i))}, i = 1, 2, .., N$
   }
-  output $G(x) = sign[\sum_{m=1}^N \alpha_M G_m(x)]$
+  \Return{$G(x) = sign[\sum_{m=1}^N \alpha_M G_m(x)]$}
 \caption{Ada boost}
 \end{algorithm} 
+```
 
-```{r, adaboost}
+We used cross validation on the most important parameters for Ada boost, and got:
+```{r adaboost cv}
 adaboost <- readRDS(here::here("models", "adaboost.rds"))
 
 ada.loan <- adaboost$ada.model
 ada.params <- adaboost$ada.params
 
 print(ada.params)
+```
+
+The performance of this model was:
+```{r adaboost performance}
 performance.adaboost.loan <- performance_boost_tree(model = ada.loan, test = test)
 ```
 
 **Bagged lgbm**
-
-\begin{General boosting algorithm}[H]
+Gradient boosting is more general than the Ada boost, allowing for optimization for any type of loss function. It can be formulated as follows:
+```{=latex}
+\begin{algorithm}[H]
 \DontPrintSemicolon
 \SetAlgoLined
-\SetKwInOut{Input}{Input}\SetKwInOut{Output}{Output}
-\Input{training\_data, stopping\_rule, splitting\_criterion, num\_predictors, num\_trees}
-\Output{fitted random forest}
-\BlankLine
-  \For{$b=1$ to num\_trees}{
-    sample nrow(training\_data) bootstrap samples \;
-    fit tree on the bootstrap sample using recursive binary splitting where each split considers a random subset of num\_predictors predictors \;
-  }
-  predict by averaging each tree
-\caption{gradient boosting}
-\end{algorithm} 
+\SetKwInOut{Input}{Input}
+\SetKwInOut{Output}{Output}
 
-\begin{Gradient boosting algorithm}[H]
-\DontPrintSemicolon
-\SetAlgoLined
-\SetKwInOut{Input}{Input}\SetKwInOut{Output}{Output}
-\Input{training\_data, stopping\_rule, splitting\_criterion, num\_predictors, num\_trees}
-\Output{fitted random forest}
-\BlankLine
-  \For{$b=1$ to num\_trees}{
-    sample nrow(training\_data) bootstrap samples \;
-    fit tree on the bootstrap sample using recursive binary splitting where each split considers a random subset of num\_predictors predictors \;
-  }
-  predict by averaging each tree
-\caption{gradient boosting}
-\end{algorithm} 
+\Input{training\_data, number of trees $M$, learning rate $\nu$}
+\Output{Boosted tree}
 
-```{r, lgbm}
+\BlankLine
+$N = \mathrm{nrow}(\text{training\_data})$\;
+Initialize $f_0 = \arg\min_\gamma \sum_{i=1}^N L(y_i,\gamma)$\;
+
+\For{$m=1$ \KwTo $M$}{
+    \For{$i=1$ \KwTo $N$}{
+        compute $r_{im} = - \frac{\partial L(y_i, f_{m-1}(x_i))}{\partial f(x_i)}$\;
+    }
+    fit tree on $r_{im}$ giving terminal regions $R_{jm}$, $j = 1, 2, \ldots, J_m$\;
+    \For{$j=1$ \KwTo $J_m$}{
+        compute $\gamma_{jm} = \arg\min_\gamma \sum_{x_i \in R_{jm}} L(y_i, f_{m-1}(x_i) + \gamma)$\;
+    }
+    calculate $f_m = f_{m-1} + \nu \sum_{j=1}^{J_m} \gamma_{jm} I(x \in R_{jm})$\;
+}
+
+\Return{$\hat{f}(x) = f_M(x)$\;}
+\caption{Gradient boosting}
+\end{algorithm}
+```
+For classification we use
+
+\begin{align*}
+p_k(x) &= \frac{e^{f_k(x)}}{\sum_{l=1}^K e^{f_l(x)}} \\
+L(y, f(x)) &= - \sum_{k=1}^K I(y = k)\,\log\bigl(p_k(x)\bigr)
+\end{align*}
+
+Lgbm additionally uses stochastic boosting, where for each tree, just like random forest, the model is only allowed to use a random subset of the predictors to reduce variance. We use cross validation to optimize the most important parameters and get the following:
+
+```{r lgbm params}
 lgbm.data <- readRDS(here::here("models", "lgbm.rds"))
 lgbm.model <- lgb.load(here::here("models", "lgbm_model.txt"))
 
@@ -324,10 +420,14 @@ lgbm.params <- lgbm.data$lgbm.params
 lgbm.loan <- lgbm.model
 
 print(lgbm.params)
+```
+With the performance
+```{r lgbm performance}
 performance.lgbm.loan <- performance_boost_tree(model = lgbm.loan, test = test)
 ```
 
-```{r, bag_lgbm}
+To reduce the variance, we try to bag 100 lgbm models and get the following performance:
+```{r bag_lgbm}
 bag_lgbm.loan <- readRDS(here::here("models", "bag_lgbm.rds"))
 
 dev.bag_lgbm.loan <- bag_lgbm.loan$prob_dev
@@ -336,7 +436,7 @@ print(summary(dev.bag_lgbm.loan))
 
 performance.bag_lgbm.loan <- performance_boost_tree(bag_lgbm.loan, test)
 ```
-
+The bagging did not improve the AUC on the test set. A possible explanation is that the lgbm models were already quite similar, which is reflected in the low bootstrap deviance.
 ### Summary
 ```{r performance}
 performance.df <- rbind(
@@ -350,4 +450,9 @@ performance.df <- rbind(
 performance.df.auc_sort <- performance.df[order(-performance.df$auc), ]
 cat("AUC: \n")
 print(performance.df.auc_sort, row_names = FALSE)
+```
+
+Best model
+```{r best_model}
+performance_boost_tree(bag_lgbm.loan, test, verbose = TRUE)
 ```
