@@ -8,6 +8,9 @@ author:
 date: "April 2026"
 header-includes:
   - \usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+editor_options: 
+  markdown: 
+    wrap: 72
 ---
 
 ```{r setup, include = FALSE}
@@ -16,8 +19,11 @@ library(lightgbm)
 library(ggplot2)
 library(GGally)
 library(reshape2)
+library(class)
+library(splines)
 source(here::here("data", "data.R"))
 source(here::here("src", "trees", "Tree_analysis.R"))
+source(here::here("src", "classical", "Classic_performance.R"))
 
 knitr::opts_chunk$set(
   fig.width = 7, fig.height = 3.5, out.width = "92%",
@@ -26,18 +32,61 @@ knitr::opts_chunk$set(
 )
 ```
 
-## Introduction
-This project uses the following dataset: https://www.kaggle.com/datasets/udaymalviya/bank-loan-data/data, which is synthtetic Each model developed will attempt to predict a borrower's loan status (i.e., wether a loan is fully paid or default) based on financial and demographic predictors, and this is thus a binary classification problem. The goal of the project is to:
+## Abstract
 
-- Compare the performance of multiple classification models in terms of predictive accuracy, interpretability and computational cost.
-- Find the most important variables for loan_status and compare the demographic and financial predictors.
+The purpose of our project is to identify key factors influencing
+individuals to default on their loans and to evaluate the predictive
+performance of different classification models for this task. These
+factors include both demographic and financial variables, such as age,
+income, credit score, loan type, and interest rate.
+
+The analysis is based of a synthetic dataset containing of one binary
+response variable indicating loan status (default or fully paid) and
+fifteen predictor variables describing borrower characteristics and loan
+attributes, where two of the predictors were added by us. We explored
+the data using histograms, boxplots, and barplots to understand variable
+distributions and relationships. Additionally, we studied class
+imbalance through prevalence and evaluated the relationship between the
+predictors using correlation analysis. Multiple classification models
+were implemented, including logistical regression, with and without cubic splines, k-nearest neighbors (KNN), decision trees,
+random forest, and boosting methods. Model performance was assessed
+using metrics such as misclassification rate, sensitivity, specificity,
+and area under ROC-curves. Model selection and tuning were performed
+using techniques such as K-fold cross-validation and pruning.
+
+The result shows that the tree-based models, outperform the simpler
+models in terms of predictive accuracy and AUC. Out of these, the
+gradient boosting models performed the best, but with a small margin.
+Key factors of loan default include loan interest rate, previous loan
+defaults, loan-to-income ratio, while variables such as credit score,
+age and education having a much weaker influence. The models indicate
+that financial variables related to the loan and the borrower are more
+important predictors of default than demographic characteristics.
+
+## Introduction
+
+This project uses the following dataset:
+<https://www.kaggle.com/datasets/udaymalviya/bank-loan-data/data>, which
+is synthetic. Each model developed will attempt to predict a borrower's
+loan status (i.e., whether a loan is fully paid or default) based on
+financial and demographic predictors, and this is thus a binary
+classification problem. The goal of the project is to:
+
+-   Compare the performance of multiple classification models in terms
+    of predictive accuracy, interpretability and computational cost.
+-   Find the most important variables for loan_status and compare the
+    demographic and financial predictors.
 
 ## Data
 
 ### Data wrangling
-The dataset was without any NA-s, most importantly there were no NA-s for the loan_status. It did however have some potential logical outliers. We identified and removed observations that satisfied at least one of these conditions:
 
-\[
+The dataset was without any NA-s, most importantly there were no NA-s
+for the loan_status. It did however have some potential logical
+outliers. We identified and removed observations that satisfied at least
+one of these conditions:
+
+$$
 \begin{aligned}
 \text{person\_age} &< 18 \\
 \text{person\_age} &> 100 \\
@@ -50,18 +99,27 @@ The dataset was without any NA-s, most importantly there were no NA-s for the lo
 \text{cb\_person\_cred\_hist\_length} &< 0 \\
 \text{cb\_person\_cred\_hist\_length} &> \text{person\_age}
 \end{aligned}
-\]
+$$
 
-We transformed the datatype of each column that was supposed to be a categorical to the categorical datatype, as this was processed as a character and integer in R. In addition we added the predictors emp_exp_to_age and cred_hist_to_age, which is employee experience to age ratio and credit history to age ratio respectively. These predictors might also be relevant for the models. 
+We transformed the datatype of each column that was supposed to be a
+categorical to the categorical datatype, as this was processed as a
+character and integer in R. In addition we added the predictors
+emp_exp_to_age and cred_hist_to_age, which is employee experience to age
+ratio and credit history to age ratio respectively. These predictors
+might also be relevant for the models.
 
-Lastly we created the train and test split. Since the default to non-default ratio is skewed (prevalence is low as seen in data analysis), we chose to stratify the splits.
+Lastly we created the train and test split. Since the default to
+non-default ratio is skewed (prevalence is low as seen in data
+analysis), we chose to stratify the splits.
 
 ### Data analysis
+
 ```{r summary, fig.height = 8}
 print(summary(Loan))
 ```
 
 We find the prevalence of successfully paid loans (1) to defaults (0):
+
 ```{r prevalence, fig.width=5, fig.height=2, out.width='65%', fig.align='center'}
 ggplot(Loan, aes(x = loan_status)) + geom_bar()
 
@@ -69,27 +127,49 @@ prevalence <- mean(Loan$loan_status == "1")
 
 cat("Prevelance: ", prevalence)
 ```
-The prevalence is quite low, which makes the dataset skewed. Then misclassification rate will be a less optimal measurement, as a poor baseline model always predicting the majority class will have a misclassification rate of 0.22, which is already low. 
 
-The ROCR plots TPR to FPR, where
-\begin{align*}
-\text{TPR} &= \frac{\text{TP}}{TP + FN} \\
-\text{FPR} &= \frac{\text{FP}}{FP + TN}
+The prevalence is quite low, which makes the dataset skewed. Then
+misclassification rate will be a less optimal measurement, as a poor
+baseline model always predicting the majority class will have a
+misclassification rate of 0.22, which is already low.
+
+The ROCR plots the true positive ratio (TPR) against the false positive
+ratio (FPR), where \begin{align*}
+\text{TPR} &= \frac{\text{TP}}{\text{TP} + \text{FN}} \\
+\text{FPR} &= \frac{\text{FP}}{\text{FP} + \text{TN}}
 \end{align*}
 
-When the number of negatives is high (thus giving low prevalence), TN also tends to be high, and FPR can then be relatively low despite the number of FP being high. A constant low FPR, means the TPR can increase by a lot without FPR increasing too much when adjusting the decision thresholds. Giving a high ROCR curve area, and thus high AUC. The AUC baseline would be 0.5, independent of the prevalence, although low prevalence affects the ROCR curve optimistically. The ROCR can in other words be too optimistic despite the model producing many false positives. 
+When the number of negatives is high, thus giving low prevalence, TN
+also tends to be high, and FPR can then be relatively low despite the
+number of FP being high. A constant low FPR, means the TPR can increase
+by a lot without FPR increasing too much when adjusting the decision
+thresholds. Giving a high ROCR curve area, and thus high AUC. The AUC
+baseline would be 0.5, independent of the prevalence, although low
+prevalence affects the ROCR curve optimistically. The ROCR can, in other
+words, be too optimistic despite the model producing many false
+positives.
 
-We define prevalence and precision as
-\begin{align*}
+We define prevalence and precision as \begin{align*}
 \text{prevalence} &= \frac{\text{TP} + \text{FN}}{\text{TP} + \text{FN} + \text{FP} + \text{TN}} \\
 \text{precision} &= \frac{\text{TP}}{\text{TP} + \text{FP}}
 \end{align*}
 
-The PR curve plots precision to recall (TPR). When positives is rare (TN is high, which also gives low prevalence), even a moderate number of FP would severely affect the precision. Thus giving a lower AUC score, which makes the PR sensitive to low prevalence. The baseline AUC would in this case be equal to the prevalence. 
+The PR curve plots precision to recall (TPR). When positives is rare (TN
+is high, which also gives low prevalence), even a moderate number of FP
+would severely affect the precision. Thus giving a lower AUC score,
+which makes the PR sensitive to low prevalence. The baseline AUC would
+in this case be equal to the prevalence.
 
-The strength of the ROCR is that it gives an interpretable result of how well the model separates the two classes, and it's baseline is not dependent on the prevalence. If the prevalence would be relatively even, we would therefore usually prefer the ROCR measurements. Same if the prevalence is very high, as the precision then becomes very high in spite of the model producing many false positives. 
+The strength of the ROCR is that it gives an interpretable result of how
+well the model separates the two classes, and it's baseline is not
+dependent on the prevalence. If the prevalence would be relatively even,
+we would therefore usually prefer the ROCR measurements. Same if the
+prevalence is very high, as the precision then becomes very high in
+spite of the model producing many false positives.
 
-Next we look at the logically most important numeric and categorical predictors. There might prove to be more important predictors later, but these are the ones we intuitively think should affect the data the most.
+Next we look at the logically most important numeric and categorical
+predictors. There might prove to be more important predictors later, but
+these are the ones we intuitively think should affect the data the most.
 
 ```{r numeric_plot, fig.width=7, fig.height=7}
 key_numeric <- c("loan_percent_income", "loan_int_rate", "credit_score")
@@ -110,7 +190,7 @@ for (column in key_numeric) {
 }
 
 mtext("Numeric predictors", side = 3, outer = TRUE, line = 1.2, cex = 1.3)
-``` 
+```
 
 ```{r categorical_plot, fig.width=7, fig.height=5}
 key_categorical <- c("previous_loan_defaults_on_file", "loan_intent", "person_home_ownership") 
@@ -127,11 +207,41 @@ for (column in key_categorical) {
 mtext("Categorical predictors", side = 3, outer = TRUE, line = 1.2, cex = 1.3)
 ```
 
-We see that loan_percent_income is right skewed from the histogram and boxplot. These large outliers might have disproportionate influence on the predicted values or coefficients in KNN or log-regression, but is less dangerous for the tree based models. For our classic models, we would therefore either scale the numeric predictors for KNN or remove outliers or log transform numeric predictors for log-regression. The distribution for loan_int_rate seems to be multimodal, may suggest there are hidden categories affecting the distribution. Therefore splines could be a good idea for the classic model, while the tree models are quite insensitive to this since they are non-parametric. The credit_score seems pretty unimodal, but we see that unlike loan_percent_income and loan_int_rate, the boxplots do not vary much by group, indicating that this predictor might have little effect on the loan_status. 
+We see that loan_percent_income is right skewed from the histogram and
+boxplot. These large outliers might have disproportionate influence on
+the predicted values or coefficients in KNN or log-regression, but is
+less dangerous for the tree based models. For our classic models, we
+would therefore either scale the numeric predictors for KNN or remove
+outliers or log transform numeric predictors for log-regression. The
+distribution for loan_int_rate seems to be multimodal, suggesting there
+may be hidden categories affecting the distribution. Therefore splines
+could be a good idea for the classic model, while the tree models are
+quite insensitive to this since they are non-parametric. The
+credit_score seems pretty unimodal, but we see that unlike
+loan_percent_income and loan_int_rate, the boxplots do not vary much by
+group, indicating that this predictor might have little effect on the
+loan_status.
 
-The previous_loan_defaults_on_file looks suspicious since no one who has previously defaulted defaults again. This dataset is however synthetic, so this could be why. It could also be explained by there being stronger terms and conditions for people previously defaulting to get another loan, which makes them less likely to default twice. The loan_intent seems to have an effect on default_rate, as well as person_home_owernship. There is little observations on the categoricals other and own, which can make estimated effect noisy. A possible solution would be to merge other and own into a rare group. Category own is however quite large, so we would prefer not to merge this into rare. Since there is then really only one rare category, the best option would perhaps be to remove all observations with person_home_ownership = other. We choose to keep it, to avoid losing data, since the tree models are not as affected by this, while we consider removing it for the classical models (KNN, logreg).
+The previous_loan_defaults_on_file looks suspicious since no one who has
+previously defaulted defaults again. This dataset is however synthetic,
+so this could be why. It could also be explained by there being stronger
+terms and conditions for people previously defaulting to get another
+loan, which makes them less likely to default twice. The loan_intent
+seems to have an effect on default_rate, as well as
+person_home_owernship. There is little observations on the categoricals
+other and own, which can make estimated effect noisy. A possible
+solution would be to merge other and own into a rare group. Category own
+is however quite large, so we would prefer not to merge this into rare.
+Since there is then really only one rare category, the best option would
+perhaps be to remove all observations with person_home_ownership =
+other. We choose to keep it, to avoid losing data, since the tree models
+are not as affected by this, while we consider removing it for the
+classical models (KNN, logreg).
 
-Since the dataset contains categorical predictors, and many of the numeric predictors do not seem to follow a Gaussian distribution, LDA and QDA seems to be less natural while KNN, log-regression and the tree models still are plausible.
+Since the dataset contains categorical predictors, and many of the
+numeric predictors do not seem to follow a Gaussian distribution, LDA
+and QDA seems to be less natural while KNN, log-regression and the tree
+models still are plausible.
 
 ```{r corr}
 par(mfrow = c(1, 1), oma = c(0, 0, 4, 0))
@@ -166,9 +276,42 @@ ggplot(data = melted_cormat, aes(Var1, Var2, fill = value))+ labs(title =  "Nume
 
 ```
 
-The correlation plot indicates that some of the predictors are highly correlated, which is undesirable for interpretability. The model might give arbitrary weight to either predictor across different fits, resulting in large standard errors and weak interpretability. The predictors can still be very good for prediction however, as they might be engineered predictors (e.g. loan_percent_income) which gives the models clearer patterns to evaluate on. The prediction is often less hurt by correlation, as it does not care about a clean split between the weight of the correlated predictors, only the total contribution to the predicted value. To reduce the amount of correlated predictors we can use subset selection or regularization methods.
+The correlation plot indicates that some of the predictors are highly
+correlated, which is undesirable for interpretability. The model might
+give arbitrary weight to either predictor across different fits,
+resulting in large standard errors and weak interpretability. The
+predictors can still be very good for prediction however, as they might
+be engineered predictors (e.g. loan_percent_income) which gives the
+models clearer patterns to evaluate on. The prediction is often less
+hurt by correlation, as it does not care about a clean split between the
+weight of the correlated predictors, only the total contribution to the
+predicted value. To reduce the amount of correlated predictors we can
+use subset selection or regularization methods.
 
 ## Models
+
+### Classical models
+
+```{r logreg}
+logreg.loan <- glm(loan_status ~ ., data=train, family="binomial")
+coef(logreg.loan)
+performance.logreg.loan <- performance_logreg(model = logreg.loan, test = test, threshold = 0.5)
+
+logreg.spline.loan <- glm(loan_status ~ ns(loan_percent_income, df=4) + ns(loan_int_rate, df=4) + ., data=train, family="binomial"
+)
+performance.logreg.spline.loan <- performance_logreg(model = logreg.spline.loan, test = test, threshold=0.5)
+
+```
+
+```{r knn}
+auc=rep(NA,30)
+
+# for (k in 1:30) {
+performance.knn.loan <- performance_knn(k=k, train = train, test = test)
+#   auc[k] = performance.knn.loan$auc
+# }
+auc
+```
 
 ### Decision trees
 
@@ -178,7 +321,10 @@ aggregation_models <- readRDS(here::here("models", "aggregation_models.rds"))
 
 **Pruned single tree**
 
-A single decision tree divides the precictor axis into seeral areas, on which we predict by majority vote for each observation in the area we predict on. We use a recursive binary splitting algorithm, which is computationally efficient, and can be formulated as follows
+A single decision tree divides the predictor axis into several areas, on
+which we predict by majority vote for each observation in the area we
+predict on. We use a recursive binary splitting algorithm, which is
+computationally efficient, and can be formulated as follows
 
 ```{=latex}
 \begin{algorithm}[H]
@@ -199,12 +345,22 @@ A single decision tree divides the precictor axis into seeral areas, on which we
 \end{algorithm} 
 ```
 
-The splitting criterion is RSS for regression, and node impurity for classification, either Gini index $G = \sum_{k = 1}^K p_k(1-p_k)$ or cross-entropy $D = - \sum_{k=1}^K p_k \log p_k$. Node impurity is generally better for classification, than misclassification rate. Consider as an example two classes with 400 nodes each written as (400, 400). If the model were to choose between the splits 
-- (100, 300) and (300, 100) 
-- (200, 400) and (200, 0)
-the misclassification rate would be 25% for both. We would however prefer the latter, as this has a pure class (low node impurity), which is to prefer. To reduce the risk of overfitting we use a splitting criterion, like minimum improvement in splitting criterion, or minimal observations in node after splitting. 
+The splitting criterion is RSS for regression, and node impurity for
+classification, either Gini index $G = \sum_{k = 1}^K p_k(1-p_k)$ or
+cross-entropy $D = - \sum_{k=1}^K p_k \log p_k$. Node impurity is
+generally better for classification, than misclassification rate.
+Consider as an example two classes with 400 nodes each written as (400,
+400). If the model were to choose between the splits - (100, 300) and
+(300, 100) - (200, 400) and (200, 0) the misclassification rate would be
+25% for both. We would however prefer the latter, as this has a pure
+class (low node impurity), which is to prefer. To reduce the risk of
+overfitting we use a splitting criterion, like minimum improvement in
+splitting criterion, or minimal observations in node after splitting.
 
-To reduce the risk of overfitting, we prune the trees by minimizing a cost-complexity pruning. K-fold cross validation is used to find to find the optimal $\alpha$, or equivalently the optimal subtree size. The algorithm for cost complexity and K-fold cross validation is as follows: 
+To reduce the risk of overfitting, we prune the trees by minimizing a
+cost-complexity pruning. K-fold cross validation is used to find to find
+the optimal $\alpha$, or equivalently the optimal subtree size. The
+algorithm for cost complexity and K-fold cross validation is as follows:
 
 ```{=latex}
 \begin{algorithm}[H]
@@ -237,10 +393,9 @@ To reduce the risk of overfitting, we prune the trees by minimizing a cost-compl
   compute mean validation error $\bar{err}_i = \frac{1}{K} \sum_{j=1}^K err_{ij}$ \;
 }
 \Return{Param with lowest $\bar{err}_i$}
-\caption{K-fold cross validation}
+\caption{K-fold cross-validation}
 \end{algorithm}
 ```
-
 
 ```{r prune, fig.width=8, fig.height=4, out.width='100%'}
 prune.loan <- aggregation_models$prune.loan
@@ -249,7 +404,8 @@ visualize_tree(model = prune.loan, aggregation = FALSE)
 performance.prune.loan <- performance_tree(model = prune.loan, test = test)
 ```
 
-From the decision tree plot we see that the most important predictors for the tree model is 
+From the decision tree plot we see that the most important predictors
+for the tree model is
 
 \begin{enumerate}
   \item previous\_loan\_defaults\_on\_file
@@ -258,18 +414,27 @@ From the decision tree plot we see that the most important predictors for the tr
   \item person\_income
 \end{enumerate}
 
-in that order. 
+in that order.
 
 **Random forest**
 
-To reduce the variance of our tree models, we can use bagging. We fit multiple models on bootstrap aggregated data, then average these models. The variance of the new model is
+To reduce the variance of our tree models, we can use bagging. We fit
+multiple models on bootstrap aggregated data, then average these models.
+The variance of the new model is
 
 \begin{align*}
 Var[\bar{X}] = Var[\frac 1 n \sum X_i] = \frac{1}{n^2} Var[X_i] + \sum_{i \neq j} Cov(X_i, X_j)
 \end{align*}
 
-Increasing n would reduce the first term, however the tree models would usually choose the same important predictors each time, causing the models to be correlated and thus increasing the second term. To reduce the correlation between each tree, we sample a certain fraction of the predictors during each split in the binary recursive split algorith, only allowing the tree to choose between one of these.For classification we usually choose $m = \sqrt{p}$ and for regression $p/3$ where p is the number of predictors. The algorithm can be formulated as follows:
- 
+Increasing n would reduce the first term, however the tree models would
+usually choose the same important predictors each time, causing the
+models to be correlated and thus increasing the second term. To reduce
+the correlation between each tree, we sample a certain fraction of the
+predictors during each split in the binary recursive split algorith,
+only allowing the tree to choose between one of these.For classification
+we usually choose $m = \sqrt{p}$ and for regression $p/3$ where p is the
+number of predictors. The algorithm can be formulated as follows:
+
 ```{=latex}
 \begin{algorithm}[H]
 \DontPrintSemicolon
@@ -287,8 +452,11 @@ Increasing n would reduce the first term, however the tree models would usually 
 \end{algorithm} 
 ```
 
-When bootstrap aggregating the data one can show that $~ 1/3$ of the train data is left out when training the model. On average then observation\_i would not be used by $~1/3 \cdot \text{num\_trees}$ of the trees. Thus we can use this part to calculate the error, called out of bag error, insetad of using cross validation.
-
+When bootstrap aggregating the data one can show that $~ 1/3$ of the
+train data is left out when training the model. On average then
+observation_i would not be used by $~1/3 \cdot \text{num\_trees}$ of the
+trees. Thus we can use this part to calculate the error, called out of
+bag error, insetad of using cross validation.
 
 ```{=latex}
 \begin{algorithm}[H]
@@ -309,7 +477,8 @@ When bootstrap aggregating the data one can show that $~ 1/3$ of the train data 
 \end{algorithm} 
 ```
 
-Although we usually would choose $\sqrt p = \sqrt{15} \approx 4$, we find the best parameter selection size mtry using the oob error.  
+Although we usually would choose $\sqrt p = \sqrt{15} \approx 4$, we
+find the best parameter selection size mtry using the oob error.
 
 ```{r rf tuning}
 rf_tuning <- readRDS(here::here("models", "rf_tuning.rds"))
@@ -323,7 +492,9 @@ legend("topright",
        bty = "n")
 ```
 
-The optimal size for this dataset turned out to be 6. For the random forest model with mtry = 6, we get the following variable importance and performance:
+The optimal size for this dataset turned out to be 6. For the random
+forest model with mtry = 6, we get the following variable importance and
+performance:
 
 ```{r rf performance}
 rf.loan <- aggregation_models$rf.loan
@@ -333,10 +504,14 @@ performance.rf.loan <- performance_tree(model = rf.loan, test = test)
 ```
 
 ### Boosting
-The boosting methods are sequential, unlike bagging and random forest which builds trees independently and aggregate their predictions.In boosting, models are added one at a time, where each model attempts to improve on the previous model's error. 
 
-**Ada Boost**
-The Ada boost algorithm can be formulated as follows
+The boosting methods are sequential, unlike bagging and random forest
+which builds trees independently and aggregate their predictions.In
+boosting, models are added one at a time, where each model attempts to
+improve on the previous model's error.
+
+**Ada Boost** The Ada boost algorithm can be formulated as follows
+
 ```{=latex}
 \begin{algorithm}[H]
 \DontPrintSemicolon
@@ -357,7 +532,9 @@ The Ada boost algorithm can be formulated as follows
 \end{algorithm} 
 ```
 
-We used cross validation on the most important parameters for Ada boost, and got:
+We used cross validation on the most important parameters for Ada boost,
+and got:
+
 ```{r adaboost cv}
 adaboost <- readRDS(here::here("models", "adaboost.rds"))
 
@@ -368,12 +545,15 @@ print(ada.params)
 ```
 
 The performance of this model was:
+
 ```{r adaboost performance}
 performance.adaboost.loan <- performance_boost_tree(model = ada.loan, test = test)
 ```
 
-**Bagged lgbm**
-Gradient boosting is more general than the Ada boost, allowing for optimization for any type of loss function. It can be formulated as follows:
+**Bagged lgbm** Gradient boosting is more general than the Ada boost,
+allowing for optimization for any type of loss function. It can be
+formulated as follows:
+
 ```{=latex}
 \begin{algorithm}[H]
 \DontPrintSemicolon
@@ -403,6 +583,7 @@ Initialize $f_0 = \arg\min_\gamma \sum_{i=1}^N L(y_i,\gamma)$\;
 \caption{Gradient boosting}
 \end{algorithm}
 ```
+
 For classification we use
 
 \begin{align*}
@@ -410,7 +591,10 @@ p_k(x) &= \frac{e^{f_k(x)}}{\sum_{l=1}^K e^{f_l(x)}} \\
 L(y, f(x)) &= - \sum_{k=1}^K I(y = k)\,\log\bigl(p_k(x)\bigr)
 \end{align*}
 
-Lgbm additionally uses stochastic boosting, where for each tree, just like random forest, the model is only allowed to use a random subset of the predictors to reduce variance. We use cross validation to optimize the most important parameters and get the following:
+Lgbm additionally uses stochastic boosting, where for each tree, just
+like random forest, the model is only allowed to use a random subset of
+the predictors to reduce variance. We use cross validation to optimize
+the most important parameters and get the following:
 
 ```{r lgbm params}
 lgbm.data <- readRDS(here::here("models", "lgbm.rds"))
@@ -421,12 +605,16 @@ lgbm.loan <- lgbm.model
 
 print(lgbm.params)
 ```
+
 With the performance
+
 ```{r lgbm performance}
 performance.lgbm.loan <- performance_boost_tree(model = lgbm.loan, test = test)
 ```
 
-To reduce the variance, we try to bag 100 lgbm models and get the following performance:
+To reduce the variance, we try to bag 100 lgbm models and get the
+following performance:
+
 ```{r bag_lgbm}
 bag_lgbm.loan <- readRDS(here::here("models", "bag_lgbm.rds"))
 
@@ -436,10 +624,19 @@ print(summary(dev.bag_lgbm.loan))
 
 performance.bag_lgbm.loan <- performance_boost_tree(bag_lgbm.loan, test)
 ```
-The bagging did not improve the AUC on the test set. A possible explanation is that the lgbm models were already quite similar, which is reflected in the low bootstrap deviance.
-### Summary
+
+The bagging did not improve the AUC on the test set. A possible
+explanation is that the lgbm models were already quite similar, which is
+reflected in the low bootstrap deviance.
+
+## Summary
+
+A summary of all the models used, and their metrics is found in the
+following print
+
 ```{r performance}
 performance.df <- rbind(
+  data.frame(model = "logreg", as.data.frame(performance.logreg.loan)),
   data.frame(model = "prune", as.data.frame(performance.prune.loan)),
   data.frame(model= "random forest", as.data.frame(performance.rf.loan)),
   data.frame(model = "ada boost", as.data.frame(performance.adaboost.loan)),
@@ -452,7 +649,33 @@ cat("AUC: \n")
 print(performance.df.auc_sort, row_names = FALSE)
 ```
 
-Best model
+We observe that the overall best-performing model is the bagged gradient
+boosting model, although the improvement over the standard boosting
+model is relatively small. Compared to the classical models, such as KNN
+and logistic regression, the tree-based methods perform substantially
+better. This is likey because these models are able to capture complex
+nonlinear relationships and interactions between predictors, which
+simpler models fail to do adequately.
+
 ```{r best_model}
 performance_boost_tree(bag_lgbm.loan, test, verbose = TRUE)
 ```
+
+The analysis of variable importance further shows that financial
+variables are the dominant predictors of loan default. Specifically, the
+predictor variables such as loan defaults, loan-to-income ratio,
+interest rate, income and home ownership seemed to be the most
+influential to the default rate. Both the random forest model and pruned
+decision tree support these findings. On the other hand, we see there
+are variables with less to none influence on the loan defaulting. The
+demographic variables such as gender and education appear to have little
+predictive power. Perhaps surprisingly, variables such as credit score
+and loan amount also show little importance. This may be due to the
+synthetic nature of the data or because their effects already are
+captured by other correlated variables
+
+Finally, because the dataset is imbalanced, with relatively few default
+cases compared to non-default, metrics such as AUC and sensitivity are
+more informative than the misclassification rate alone. The boosting
+methods excel in handling skewed data, such as in our case, which is
+reflected in the results.
