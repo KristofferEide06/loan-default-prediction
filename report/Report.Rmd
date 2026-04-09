@@ -165,11 +165,11 @@ predictors. There might prove to be more important predictors later, but
 these are the ones we intuitively think should affect the data the most.
 
 ```{r numeric_plot, fig.width=7, fig.height=7}
-key_numeric <- c("loan_percent_income", "loan_int_rate", "credit_score")
+key.numeric <- c("loan_percent_income", "loan_int_rate", "credit_score")
 num.cols.num <- names(Loan)[sapply(Loan, is.numeric)]
 par(mfrow = c(3, 3), mar = c(3, 3, 2, 1), oma = c(0, 0, 4, 0), cex = 0.6)
 
-for (column in key_numeric) {
+for (column in key.numeric) {
   hist(Loan[[column]], prob = TRUE, border = "black",
        main = paste("Hist, ", column),
        xlab = column)
@@ -186,10 +186,10 @@ mtext("Numeric predictors", side = 3, outer = TRUE, line = 1.2, cex = 1.3)
 ```
 
 ```{r categorical_plot, fig.width=7, fig.height=5}
-key_categorical <- c("previous_loan_defaults_on_file", "loan_intent", "person_home_ownership") 
+key.categorical <- c("previous_loan_defaults_on_file", "loan_intent", "person_home_ownership") 
 par(mfrow = c(3, 2), oma = c(0, 0, 4, 0), cex = 0.5)
 
-for (column in key_categorical) {
+for (column in key.categorical) {
   barplot(table(Loan[[column]]),
       main = paste("Bar, ", column),
       xlab = column)
@@ -654,7 +654,7 @@ simpler models fail to do adequately.
 AUC and specificity are the most important performance metrics for our goal, combined with misclassification. This is that from a banking perspective, it would be important to catch potential defaulters (negative outcome), and we thus want the specificity to be high. This could also be achieved by simply assuming everyone defaults, thus giving a poor model, and AUC and miscilassification rate will help evaluate this other aspect of the model. We see that the AUC and misclassification rate is quite high for bag lgbm, lgbm and random forest, but that the random forest performs much better with regards to the specificity. The random forest model is more interpretable than the boosting models, and computationally cheap, which is also an advantage. We would therefore prefer the random forest for this dataset, with the following performance:
 
 ```{r best_model}
-performance_tree(rf.loan, test, verbose = TRUE)
+rf.visualize_performance <- performance_tree(rf.loan, test, verbose = TRUE)
 ```
 
 The variable importance plot for random forest, lgbm, and the decision tree shows that financial
