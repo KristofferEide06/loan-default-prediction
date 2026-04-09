@@ -30,7 +30,7 @@ performance_tree <- function(model, test, verbose = FALSE) {
   
   misclass.model <- 1 - sum(diag(confTab.model))/sum(confTab.model)
   sensitivity.model <- confTab.model["1", "1"]/sum(confTab.model[, "1"])
-  specificity.model <- confTab.model["0", "0"]/sum(confTab.model[, "0"]) #Consider adding positive class improvement
+  specificity.model <- confTab.model["0", "0"]/sum(confTab.model[, "0"]) 
   cat("Misclassification rate: ", misclass.model, "\n") 
   cat("Sensitivity: ", sensitivity.model, "\n") 
   cat("Specificity : ", specificity.model, "\n") 
@@ -61,7 +61,7 @@ performance_tree <- function(model, test, verbose = FALSE) {
   )
 }
 
-performance_boost_tree <- function(model, test, verbose = FALSE, threshold = 0.5, n.trees = NULL) { #Copilot used to help with this one(prob >= threshold, 1, 0)
+performance_boost_tree <- function(model, test, verbose = FALSE, threshold = 0.5, n.trees = NULL) {
   if (inherits(model, "lgb.Booster")) {
     x_test <- data.matrix(test[, setdiff(names(test), "loan_status")])
     prob <- predict(model, x_test)
