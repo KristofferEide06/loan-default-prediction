@@ -1,7 +1,7 @@
 ---
 title: "Report"
 output:
-  html_document: default
+  pdf_document: default
 author: 
   - Kristoffer Eide
   - Michael Birkeland
@@ -35,9 +35,9 @@ knitr::opts_chunk$set(
 ## Abstract
 
 The purpose of our project is to identify key factors influencing
-individuals to default on their loans and to evaluate the predictive
-performance of different classification models for this task. These
-factors include both demographic and financial variables, such as age,
+predictive performance on loan defaulting and to evaluate the predictive
+performance of different classification models. This could provide potentially valuable insight, and a good screening system for banks when assessing loan applications. The
+predictors include both demographic and financial variables, such as age,
 income, credit score, loan type, and interest rate.
 
 The analysis is based of a synthetic dataset containing of one binary
@@ -56,7 +56,7 @@ by implementing K-fold cross-validation.
 
 The result shows that the tree-based models, outperform the simpler
 models in terms of predictive accuracy and AUC. Out of these, the
-bagged lgbm performed the best.
+random forest performed the best for our task.
 Key factors of loan default include loan interest rate, previous loan
 defaults, loan-to-income ratio, while variables such as credit score,
 age and education had a weaker influence. The models indicate
@@ -362,7 +362,7 @@ algorithm for cost complexity and K-fold cross validation is as follows:
 \Input{tree, $\alpha$}
 \Output{pruned decision tree}
 \BlankLine
-    minimize $C_\alpha(T) = \alpha * |T| + Q(T)$ for different alpha \;
+    minimize $C_\alpha(T) = \alpha * |T| + Q(T)$ for different $\alpha$ \;
     choose tree with lowest $C_\alpha$ using cross-validation
 \caption{Pruning}
 \end{algorithm} 
@@ -376,11 +376,11 @@ algorithm for cost complexity and K-fold cross validation is as follows:
 \Input{model, train\_data, params, K}
 \Output{optimal param}
 \BlankLine
-    divide train into K folds ;\
+    divide train into K folds \;
     \For{param\_i in params}{
       \For{fold\_j in folds}{
-      evaluate model on all folds except fold\_j \;
-      calculate validation error $err_{ij}$ on fold\_j /;
+      train model on all folds except fold\_j \;
+      calculate validation error $err_{ij}$ on fold\_j \;
   }
   compute mean validation error $\bar{err}_i = \frac{1}{K} \sum_{j=1}^K err_{ij}$ \;
 }
@@ -435,7 +435,7 @@ number of predictors. The algorithm can be formulated as follows:
 \BlankLine
   \For{$b=1$ to num\_trees}{
     sample nrow(training\_data) bootstrap samples \;
-    fit tree on the bootstrap sample using recursive binary splitting where each split considers a random subset of num\_predictors predictors \;
+    fit tree on the bootstrap sample using recursive binary splitting algorithm where each split considers a random subset of num\_predictors predictors \;
   }
   predict by averaging each tree
 \caption{Random forest}
@@ -468,7 +468,7 @@ bag error, instead of using cross validation.
 ```
 
 Although we usually would choose $\sqrt p = \sqrt{15} \approx 4$, we
-examine the best parameter selection size, mtry, using the oob error.
+examine the best parameter selection size, mtry, using the oob error:
 
 ```{r rf tuning}
 rf_tuning <- readRDS(here::here("models", "rf_tuning.rds"))
