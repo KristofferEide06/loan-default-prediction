@@ -1,4 +1,7 @@
 # Logistical regression
+library(class)
+
+
 performance_logreg <- function(model, test, verbose = FALSE, threshold = 0.5) {
   # Predict probabilities
   prob <- predict(model, newdata = test, type = "response")
@@ -51,12 +54,14 @@ performance_knn <- function(k, train, test, verbose = FALSE) {
   test_x  <- model.matrix(loan_status ~ . -1, data=test)
   
   # Scale the sets
-  train_x <- scale(train_x)
-  test_x  <- scale(test_x)
+  center_vals <- colMeans(train_x)
+  sd_vals <- apply(train_x, 2, sd)
   
+  train_x <- (train_x - center_vals)/sd_vals
+  test_x <- (test_x - center_vals)/sd_vals
   
   # Predict
-  model.pred <- knn(train = train_x, test = test_xg, cl = train$loan_status, k = k, prob = TRUE)
+  model.pred <- knn(train = train_x, test = test_x, cl = train$loan_status, k = k, prob = TRUE)
   
   prob <- ifelse(
     model.pred == "1",
