@@ -57,9 +57,6 @@ performance_knn <- function(k, train, test, verbose = FALSE) {
   center_vals <- colMeans(train_x)
   sd_vals <- apply(train_x, 2, sd)
   
-  train_x <- scale(train_x)
-  test_x  <- scale(test_x)
-  
   train_x <- (train_x - center_vals)/sd_vals
   test_x <- (test_x - center_vals)/sd_vals
   
