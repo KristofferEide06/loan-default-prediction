@@ -24,6 +24,7 @@ library(splines)
 source(here::here("data", "data.R"))
 source(here::here("src", "trees", "Tree_analysis.R"))
 source(here::here("src", "classical", "Classic_performance.R"))
+source(here::here("src", "classical", "Classic_model.R"))
 
 
 knitr::opts_chunk$set(
@@ -165,7 +166,7 @@ Next we look at the logically most important numeric and categorical
 predictors. There might prove to be more important predictors later, but
 these are the ones we intuitively think should affect the data the most.
 
-```{r numeric_plot, fig.width=7, fig.height=7}
+```{r numeric_plot, fig.width=7, fig.height=5}
 key.numeric <- c("loan_percent_income", "loan_int_rate", "credit_score")
 num.cols.num <- names(Loan)[sapply(Loan, is.numeric)]
 par(mfrow = c(3, 3), mar = c(3, 3, 2, 1), oma = c(0, 0, 4, 0), cex = 0.6)
@@ -222,7 +223,7 @@ which might explain the skewness It could also be explained by there being stron
 terms and conditions for people previously defaulting to get another
 loan, which makes them less likely to default twice. The loan_intent
 seems to have an effect on default_rate, as well as
-person_home_owernship. There are little observations on the categoricals
+person_home_ownership. There are little observations on the categoricals
 other and own, which can make estimated effect noisy. A possible
 solution would be to merge other and own into a rare group. Category own
 is however quite large, so we would prefer not to merge this into rare.
@@ -284,27 +285,37 @@ predicted value. To reduce the amount of correlation between the predictors we c
 ## Models
 
 ### Classical models
-
+We will begin with the classical models in predicting the loan default. The models that will be considered are standard logistic regression, log-reg with cubic splines, logreg with variables chosen through PCA and KNN. 
 ```{r logreg}
 logreg.loan <- glm(loan_status ~ ., data=train, family="binomial")
 coef(logreg.loan)
-performance.logreg.loan <- performance_logreg(model = logreg.loan, test = test, threshold = 0.5)
 
-logreg.spline.loan <- glm(loan_status ~ ns(loan_percent_income, df=4) + ns(loan_int_rate, df=4) + ., data=train, family="binomial"
-)
-performance.logreg.spline.loan <- performance_logreg(model = logreg.spline.loan, test = test, threshold=0.5)
-
+performance.logreg.loan <- performance_logreg(logreg.loan, test, threshold = 0.5)
 ```
+From the standard logistic regression, we see that the apparent most influential variables are ones such as previous loan defaulting, home ownership and loan-to-income ratio. 
 
+As seen earlier in the histograms and boxplots, some of the predictors are skewed or multimodal, indicating a strong non-linear relationship with the response variable. It is therefore not sufficient to assume that the log-odds of default is linear of $x$. We can instead consider cubic splines for these nonlinear predictors, such as the loan_percent_income and loan_int_rate variables. Through 5-fold cross-validation, where AUC was optimized, the degrees of freedom of 7 for both variables were chosen and used for the final model fit, giving the following results.
+
+``` {r logreg splines}
+
+logreg.spline.loan <- glm(loan_status ~ ns(loan_percent_income, df=d1) + ns(loan_int_rate, df=d2) + ., data=train, family="binomial")
+
+
+performance.logreg.spline.loan <- performance_logreg(logreg.spline.loan, test, threshold=0.5)
+```
+Due to multicollinearity and high dimensionality, we apply principal component analysis (PCA). The first 16 principal components explain 90% of the variance and are used as inputs in the logistic regression model, yielding the following results.
+``` {r logreg pca}
+## PCA
+logreg.pca <- logreg_pca(train, test, var_percent = 0.90)
+logreg.pca.loan <- logreg.pca$model
+
+performance.logreg.pca.loan <- performance_logreg(logreg.pca.loan, logreg.pca$test_pca)
+```
+Lastly, we consider KNN. The number of neighbors $k$ was selected using 5-fold cross-validation, optimizing against the AUC. The relatively large optimal value of k=30 indicates that the model requires strong smoothing, suggesting a lack of clear local structure in the data and a high level of noise.
 ```{r knn}
-#auc=rep(NA,30)
-
-# for (k in 1:30) {
-#performance.knn.loan <- performance_knn(k=k, train = train, test = test)
-#   auc[k] = performance.knn.loan$auc
-# }
-#auc
+performance.knn.loan <- performance_knn(best_k, train, test)
 ```
+We observe that KNN performs poorly compared to the other models. This is partly due to the skewness in the dataset, but also due to the curse of dimensionality. In order to include categorical predictors in KNN, they must be converted into dummy variables, which increases the number of predictors and thus the dimensionality of the feature space. In high dimensions, distance measures become less informative, which reduces the effectiveness of KNN. Possible workarounds to this include subset selection or dimensionality reduction techniques such as PCA, but these approaches are not explored further for KNN.
 
 ### Decision trees
 
@@ -588,7 +599,7 @@ L(y, f(x)) &= - \sum_{k=1}^K I(y = k)\,\log\bigl(p_k(x)\bigr)
 Lgbm additionally uses stochastic boosting, where for each tree, just
 like random forest, the model is only allowed to use a random subset of
 the predictors to reduce variance. We use cross validation to optimize
-the most important parameters, were we used LLM GPT-5.4 to evaluate which parameters that generally is the most important, and appropriate parameter grids for these ones. We then got the following paremeters:
+the most important parameters, were we used LLM GPT-5.4 to evaluate which parameters that generally is the most important, and appropriate parameter grids for these ones. We then got the following parameters:
 
 ```{r lgbm params}
 lgbm.data <- readRDS(here::here("models", "lgbm.rds"))
@@ -634,6 +645,9 @@ following print:
 ```{r performance}
 performance.df <- rbind(
   data.frame(model = "logreg", as.data.frame(performance.logreg.loan)),
+  data.frame(model = "logreg spline", as.data.frame(performance.logreg.spline.loan)),
+  data.frame(model = "logreg pca", as.data.frame(performance.logreg.pca.loan)),
+  data.frame(model = "knn", as.data.frame(performance.knn.loan)),
   data.frame(model = "prune", as.data.frame(performance.prune.loan)),
   data.frame(model= "random forest", as.data.frame(performance.rf.loan)),
   data.frame(model = "ada boost", as.data.frame(performance.adaboost.loan)),
@@ -646,13 +660,9 @@ cat("AUC: \n")
 print(performance.df.auc_sort, row_names = FALSE)
 ```
 
-Compared to the classical models, such as KNN
-and logistic regression, the tree-based methods perform substantially
-better in almost all aspects of the performance metrics. This is likey because these models are able to capture complex
-nonlinear relationships and interactions between predictors, at the cost of interpretability, which
-simpler models fail to do adequately. 
+For the classical models, KNN performs significantly worse, while logistic regression, especially with splines remains competitive as a choice for model. The tree-based methods achieve the highest AUC overall, with random forest and boosting models performing best. This suggests that while nonlinear methods provide some advantage, simpler models can still perform well when appropriately specified.
 
-AUC and specificity are the most important performance metrics for our goal, combined with misclassification. This is that from a banking perspective, it would be important to catch potential defaulters (negative outcome), and we thus want the specificity to be high. This could also be achieved by simply assuming everyone defaults, thus giving a poor model, and AUC and miscilassification rate will help evaluate this other aspect of the model. We see that the AUC and misclassification rate is quite high for bag lgbm, lgbm and random forest, but that the random forest performs much better with regards to the specificity. The random forest model is more interpretable than the boosting models, and computationally cheap, which is also an advantage. We would therefore prefer the random forest for this dataset, with the following performance:
+AUC and specificity are the most important performance metrics for our goal, combined with misclassification. This is that from a banking perspective, it would be important to catch potential defaulters (negative outcome), and we thus want the specificity to be high. This could also be achieved by simply assuming everyone defaults, thus giving a poor model, and AUC and misclassification rate will help evaluate this other aspect of the model. We see that the AUC and misclassification rate is quite high for bag lgbm, lgbm and random forest, but that the random forest performs much better with regards to the specificity. The random forest model is more interpretable than the boosting models, and computationally cheap, which is also an advantage. We would therefore prefer the random forest for this dataset, with the following performance:
 
 ```{r best_model}
 rf.visualize_performance <- performance_tree(rf.loan, test, verbose = TRUE)
